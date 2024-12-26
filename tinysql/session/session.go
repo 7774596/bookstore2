@@ -217,12 +217,12 @@ func (s *session) doCommit(ctx context.Context) error {
 	}
 
 	// mockCommitError and mockGetTSErrorInRetry use to test PR #8743.
-	failpoint.Inject("mockCommitError", func(val failpoint.Value) {
+	if val, ok := failpoint.Eval(_curpkg_("mockCommitError")); ok {
 		if val.(bool) && kv.IsMockCommitErrorEnable() {
 			kv.MockCommitErrorDisable()
-			failpoint.Return(kv.ErrTxnRetryable)
+			return kv.ErrTxnRetryable
 		}
-	})
+	}
 
 	// Get the related table IDs.
 	relatedTables := s.GetSessionVars().TxnCtx.TableDeltaMap
@@ -268,11 +268,11 @@ func (s *session) commitTxn(ctx context.Context) error {
 func (s *session) CommitTxn(ctx context.Context) error {
 	err := s.commitTxn(ctx)
 
-	failpoint.Inject("keepHistory", func(val failpoint.Value) {
+	if val, ok := failpoint.Eval(_curpkg_("keepHistory")); ok {
 		if val.(bool) {
-			failpoint.Return(err)
+			return err
 		}
-	})
+	}
 
 	s.sessionVars.TxnCtx.Cleanup()
 	return err
@@ -586,7 +586,7 @@ func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec
 
 	// Hint: step I.3.1
 	// YOUR CODE HERE (lab4)
-	panic("YOUR CODE HERE")
+	stmtNodes, warns, err = s.ParseSQL(ctx, sql, charsetInfo, collation)
 	if err != nil {
 		s.rollbackOnError(ctx)
 		logutil.Logger(ctx).Warn("parse SQL failed",
@@ -615,7 +615,7 @@ func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec
 		var stmt *executor.ExecStmt
 		// Hint: step I.3.2
 		// YOUR CODE HERE (lab4)
-		panic("YOUR CODE HERE")
+		stmt, err = compiler.Compile(ctx, stmtNode)
 		if stmt != nil {
 			logutil.Logger(ctx).Debug("stmt", zap.String("sql", stmt.Text))
 		}
@@ -633,7 +633,7 @@ func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec
 
 		// Hint: step I.3.3
 		// YOUR CODE HERE (lab4)
-		panic("YOUR CODE HERE")
+		recordSets, err = s.executeStatement(ctx, connID, stmtNode, stmt, recordSets, multiQuery)
 		if err != nil {
 			return nil, err
 		}

@@ -291,11 +291,11 @@ func (c *RegionCache) GetTiKVRPCContext(bo *Backoffer, id RegionVerID, replicaRe
 		return nil, err
 	}
 	// enable by `curl -XPUT -d '1*return("[some-addr]")->return("")' http://host:port/github.com/pingcap/tidb/store/tikv/injectWrongStoreAddr`
-	failpoint.Inject("injectWrongStoreAddr", func(val failpoint.Value) {
+	if val, ok := failpoint.Eval(_curpkg_("injectWrongStoreAddr")); ok {
 		if a, ok := val.(string); ok && len(a) > 0 {
 			addr = a
 		}
-	})
+	}
 	if store == nil || len(addr) == 0 {
 		// Store not found, region must be out of date.
 		cachedRegion.invalidate()
@@ -457,8 +457,23 @@ func (c *RegionCache) LocateRegionByID(bo *Backoffer, regionID uint64) (*KeyLoca
 // Help function `RegionCache.LocateKey`
 func (c *RegionCache) GroupKeysByRegion(bo *Backoffer, keys [][]byte, filter func(key, regionStartKey []byte) bool) (map[RegionVerID][][]byte, RegionVerID, error) {
 	// YOUR CODE HERE (lab3).
-	panic("YOUR CODE HERE")
-	return nil, RegionVerID{}, nil
+	groupedKey := make(map[RegionVerID][][]byte)
+	var firstRegionID RegionVerID
+
+	for i, key := range keys {
+		keyRegion, err := c.LocateKey(bo, key)
+		if err != nil {
+			return nil, RegionVerID{}, errors.Trace(err)
+		}
+		if filter != nil && filter(key, keyRegion.StartKey) {
+			continue
+		}
+		if i == 0 {
+			firstRegionID = keyRegion.Region
+		}
+		groupedKey[keyRegion.Region] = append(groupedKey[keyRegion.Region], key)
+	}
+	return groupedKey, firstRegionID, nil
 }
 
 // ListRegionIDsInKeyRange lists ids of regions in [start_key,end_key].

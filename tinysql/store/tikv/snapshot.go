@@ -99,11 +99,11 @@ func (s *tikvSnapshot) get(bo *Backoffer, k kv.Key) ([]byte, error) {
 		}
 	}
 
-	failpoint.Inject("snapshot-get-cache-fail", func(_ failpoint.Value) {
+	if _, ok := failpoint.Eval(_curpkg_("snapshot-get-cache-fail")); ok {
 		if bo.ctx.Value("TestSnapshotCache") != nil {
 			panic("cache miss")
 		}
-	})
+	}
 
 	cli := clientHelper{
 		LockResolver:      s.store.lockResolver,
@@ -148,7 +148,21 @@ func (s *tikvSnapshot) get(bo *Backoffer, k kv.Key) ([]byte, error) {
 			//   1. The transaction is during commit, wait for a while and retry.
 			//   2. The transaction is dead with some locks left, resolve it.
 			// YOUR CODE HERE (lab3).
-			panic("YOUR CODE HERE")
+			lock, err := extractLockFromKeyErr(keyErr)
+			if err != nil {
+				return nil, errors.Trace(err)
+			}
+
+			msBeforeTxnExpired, err := cli.ResolveLocks(bo, s.version.Ver, []*Lock{lock})
+			if err != nil {
+				return nil, errors.Trace(err)
+			}
+			if msBeforeTxnExpired > 0 {
+				err = bo.BackoffWithMaxSleep(boTxnLockFast, int(msBeforeTxnExpired), errors.New(keyErr.String()))
+				if err != nil {
+					return nil, errors.Trace(err)
+				}
+			}
 			continue
 		}
 		return val, nil
@@ -175,12 +189,12 @@ func extractLockFromKeyErr(keyErr *pb.KeyError) (*Lock, error) {
 }
 
 func extractKeyErr(keyErr *pb.KeyError) error {
-	failpoint.Inject("ErrMockRetryableOnly", func(val failpoint.Value) {
+	if val, ok := failpoint.Eval(_curpkg_("ErrMockRetryableOnly")); ok {
 		if val.(bool) {
 			keyErr.Conflict = nil
 			keyErr.Retryable = "mock retryable error"
 		}
-	})
+	}
 
 	if keyErr.Conflict != nil {
 		return newWriteConflictError(keyErr.Conflict)
